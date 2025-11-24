@@ -4,35 +4,56 @@ import mongoose from "mongoose";
 // --- CONNECT TO MONGODB ---
 const mongoUri = process.env.MONGO_URI;
 
-mongoose.connect(mongoUri)
+mongoose
+  .connect(mongoUri)
   .then(() => console.log("MongoDB connected"))
-  .catch(err => console.log("MongoDB error:", err.message));
+  .catch((err) => console.log("MongoDB error:", err.message));
 
 // --- EXPRESS APP ---
 const app = express();
 app.use(express.json());
 
-// Example schema for saving Base44 records
-const recordSchema = new mongoose.Schema({}, { strict: false });
-const Record = mongoose.model("Record", recordSchema);
+// Schema για να αποθηκεύουμε τα webhooks από Base44
+const webhookSchema = new mongoose.Schema(
+  {
+    entity: String,
+    operation: String,
+    timestamp: String,
+    record: Object,
+  },
+  { strict: false, timestamps: true }
+);
 
-// --- THE ENDPOINT THAT BASE44 WILL CALL ---
+const WebhookRecord = mongoose.model("WebhookRecord", webhookSchema);
+
+// --- ENDPOINT ΠΟΥ ΚΑΛΕΙ ΤΟ BASE44 ---
 app.post("/base44-sync", async (req, res) => {
   try {
-    const data = req.body;
+    const payload = req.body;
+    console.log("Webhook από Base44:", JSON.stringify(payload));
 
-    // UPSERT (insert or update)
-    await Record.updateOne(
-      { id: data.id },
-      { $set: data },
+    const { entity, operation, timestamp, record } = payload;
+
+    // Αποθήκευση / upsert στη Mongo
+    await WebhookRecord.updateOne(
+      {
+        entity,
+        "record.id": record?.id || record?._id || null,
+      },
+      {
+        $set: {
+          entity,
+          operation,
+          timestamp,
+          record,
+        },
+      },
       { upsert: true }
     );
 
-    console.log("Λήφθηκαν δεδομένα από Base44:", data);
-    
     res.sendStatus(200);
   } catch (err) {
-    console.error("Error:", err);
+    console.error("Error in /base44-sync:", err);
     res.sendStatus(500);
   }
 });
